@@ -39,102 +39,68 @@ impl Default for Person {
 //    `usize` as the age.
 // If while parsing the age, something goes wrong, then return the default of
 // Person Otherwise, then return an instantiated Person object with the results
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
-// I AM NOT DONE
+struct Queue {
+    length: u32,
+    first_half: Vec<u32>,
+    second_half: Vec<u32>,
+}
 
-impl From<&str> for Person {
-    fn from(s: &str) -> Person {
+impl Queue {
+    fn new() -> Self {
+        Queue {
+            length: 10,
+            first_half: vec![1, 2, 3, 4, 5],
+            second_half: vec![6, 7, 8, 9, 10],
+        }
     }
+}
+
+fn send_tx(q: Queue, tx: mpsc::Sender<u32>) -> () {
+    let qc = Arc::new(q);
+    let qc1 = Arc::clone(&qc);
+    let qc2 = Arc::clone(&qc);
+
+    let tx1 = tx.clone();
+    let tx2 = tx.clone();
+
+    thread::spawn(move || {
+        for val in &qc1.first_half {
+            println!("sending {:?}", val);
+            tx1.send(*val).unwrap();
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
+
+    thread::spawn(move || {
+        for val in &qc2.second_half {
+            println!("sending {:?}", val);
+            tx2.send(*val).unwrap();
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
 }
 
 fn main() {
-    // Use the `from` function
-    let p1 = Person::from("Mark,20");
-    // Since From is implemented for Person, we should be able to use Into
-    let p2: Person = "Gerald,70".into();
-    println!("{:?}", p1);
-    println!("{:?}", p2);
-}
+    let (tx, rx) = mpsc::channel();
+    let queue = Queue::new();
+    let queue_length = queue.length;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_default() {
-        // Test that the default person is 30 year old John
-        let dp = Person::default();
-        assert_eq!(dp.name, "John");
-        assert_eq!(dp.age, 30);
-    }
-    #[test]
-    fn test_bad_convert() {
-        // Test that John is returned when bad string is provided
-        let p = Person::from("");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
-    #[test]
-    fn test_good_convert() {
-        // Test that "Mark,20" works
-        let p = Person::from("Mark,20");
-        assert_eq!(p.name, "Mark");
-        assert_eq!(p.age, 20);
-    }
-    #[test]
-    fn test_bad_age() {
-        // Test that "Mark,twenty" will return the default person due to an
-        // error in parsing age
-        let p = Person::from("Mark,twenty");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
+    send_tx(queue, tx);
+
+    let mut total_received: u32 = 0;
+    for received in rx {
+        println!("Got: {}", received);
+        total_received += 1;
+        if total_received == queue_length {
+            break;
+        }
     }
 
-    #[test]
-    fn test_missing_comma_and_age() {
-        let p: Person = Person::from("Mark");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
-
-    #[test]
-    fn test_missing_age() {
-        let p: Person = Person::from("Mark,");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
-
-    #[test]
-    fn test_missing_name() {
-        let p: Person = Person::from(",1");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
-
-    #[test]
-    fn test_missing_name_and_age() {
-        let p: Person = Person::from(",");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
-
-    #[test]
-    fn test_missing_name_and_invalid_age() {
-        let p: Person = Person::from(",one");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
-
-    #[test]
-    fn test_trailing_comma() {
-        let p: Person = Person::from("Mike,32,");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
-
-    #[test]
-    fn test_trailing_comma_and_some_string() {
-        let p: Person = Person::from("Mike,32,man");
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 30);
-    }
+    println!("total numbers received: {}", total_received);
+    assert_eq!(total_received, queue_length);
 }
